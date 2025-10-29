@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Тест Гироскопа</title>
+    <!-- Подключаем Tailwind CSS для стилизации -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Используем шрифт Inter */
+        body { 
+            font-family: 'Inter', sans-serif; 
+        }
+        
+        /* Стили для 3D-куба */
+        .scene {
+            perspective: 600px; /* Перспектива для 3D-эффекта */
+            width: 150px;
+            height: 150px;
+        }
+        .cube {
+            width: 100%;
+            height: 100%;
+            position: relative;
+            transform-style: preserve-3d;
+            transition: transform 0.1s linear; /* Плавный переход */
+        }
+        .cube__face {
+            position: absolute;
+            width: 150px;
+            height: 150px;
+            border: 2px solid rgba(255, 255, 255, 0.7);
+            background: rgba(0, 150, 255, 0.1);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1rem;
+            font-weight: bold;
+            color: white;
+            backface-visibility: hidden; /* Скрываем обратную сторону */
+        }
+        /* Располагаем 6 граней куба в 3D-пространстве */
+        .cube__face--front  { transform: rotateY(  0deg) translateZ(75px); }
+        .cube__face--right  { transform: rotateY( 90deg) translateZ(75px); }
+        .cube__face--back   { transform: rotateY(180deg) translateZ(75px); }
+        .cube__face--left   { transform: rotateY(-90deg) translateZ(75px); }
+        .cube__face--top    { transform: rotateX( 90deg) translateZ(75px); }
+        .cube__face--bottom { transform: rotateX(-90deg) translateZ(75px); }
+    </style>
+</head>
+<body class="bg-gray-900 text-white min-h-screen flex items-center justify-center p-4">
+
+    <div class="container mx-auto text-center max-w-md w-full">
+        <h1 class="text-3xl font-bold mb-6">Тест Гироскопа</h1>
+        <p class="text-gray-400 mb-6">Нажмите кнопку, чтобы активировать сенсоры. Работает только на мобильных устройствах по HTTPS.</p>
+
+        <!-- Кнопка для запроса разрешений (критически важно для iOS) -->
+        <button id="startButton" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg text-lg transition duration-300 mb-6 w-full">
+            Начать
+        </button>
+
+        <!-- 3D Куб для визуализации -->
+        <div class="scene mx-auto mb-6 hidden" id="scene">
+            <div class="cube" id="cube">
+                <div class="cube__face cube__face--front">Front</div>
+                <div class="cube__face cube__face--right">Right</div>
+                <div class="cube__face cube__face--back">Back</div>
+                <div class="cube__face cube__face--left">Left</div>
+                <div class="cube__face cube__face--top">Top</div>
+                <div class="cube__face cube__face--bottom">Bottom</div>
+            </div>
+        </div>
+
+        <!-- Область для вывода данных -->
+        <div id="dataContainer" class="bg-gray-800 p-6 rounded-lg shadow-lg hidden">
+            <h2 class="text-xl font-semibold mb-4">Данные сенсора:</h2>
+            <div class="space-y-3 text-left">
+                <!-- Alpha (Z-ось, компас) -->
+                <p class="text-lg"><strong>Alpha (Z):</strong> <span id="alpha" class="font-mono text-blue-300 float-right">0.00</span>°</p>
+                <!-- Beta (X-ось, наклон вперед/назад) -->
+                <p class="text-lg"><strong>Beta (X):</strong> <span id="beta" class="font-mono text-green-300 float-right">0.00</span>°</p>
+                <!-- Gamma (Y-ось, наклон влево/вправо) -->
+                <p class="text-lg"><strong>Gamma (Y):</strong> <span id="gamma" class="font-mono text-yellow-300 float-right">0.00</span>°</p>
+            </div>
+        </div>
+
+        <!-- Статус/Ошибка -->
+        <p id="status" class="text-gray-500 mt-4 h-6"></p>
+
+    </div>
+
+    <script>
+        // Получаем элементы DOM
+        const startButton = document.getElementById('startButton');
+        const dataContainer = document.getElementById('dataContainer');
+        const status = document.getElementById('status');
+        const cube = document.getElementById('cube');
+        const scene = document.getElementById('scene');
+        
+        const alphaEl = document.getElementById('alpha');
+        const betaEl = document.getElementById('beta');
+        const gammaEl = document.getElementById('gamma');
+
+        // Обработчик нажатия кнопки "Начать"
+        startButton.addEventListener('click', () => {
+            status.textContent = 'Запрос доступа...';
+
+            // --- 1. Обработка для iOS 13+ ---
+            // Проверяем, существует ли специальный метод `requestPermission`
+            if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+                DeviceOrientationEvent.requestPermission()
+                    .then(permissionState => {
+                        if (permissionState === 'granted') {
+                            // Доступ получен, подключаем слушатель
+                            window.addEventListener('deviceorientation', handleOrientation);
+                            showData();
+                        } else {
+                            // Доступ запрещен
+                            status.textContent = 'Доступ к сенсорам запрещен.';
+                        }
+                    })
+                    .catch(error => {
+                        // Ошибка при запросе (например, не HTTPS)
+                        console.error(error);
+                        status.textContent = 'Ошибка запроса. (Нужен HTTPS)';
+                    });
+            } else {
+                // --- 2. Обработка для Android и других браузеров ---
+                // Просто добавляем слушатель. 
+                // Вызов из-под клика должен дать доступ.
+                window.addEventListener('deviceorientation', handleOrientation);
+                showData();
+            }
+        });
+
+        // Функция, которая показывает элементы после старта
+        function showData() {
+            startButton.classList.add('hidden');
+            dataContainer.classList.remove('hidden');
+            scene.classList.remove('hidden');
+            status.textContent = 'Ожидание данных...';
+        }
+
+        // Обработчик данных с сенсора
+        function handleOrientation(event) {
+            // Проверяем, что данные пришли
+            if (event.alpha === null || event.beta === null || event.gamma === null) {
+                status.textContent = 'Получены неполные данные...';
+                return;
+            }
+            
+            if (status.textContent === 'Ожидание данных...') {
+                status.textContent = 'Данные получены!';
+            }
+
+            const alpha = event.alpha;
+            const beta = event.beta;
+            const gamma = event.gamma;
+
+            // Обновляем текстовые значения
+            alphaEl.textContent = alpha.toFixed(2);
+            betaEl.textContent = beta.toFixed(2);
+            gammaEl.textContent = gamma.toFixed(2);
+
+            // Обновляем вращение куба
+            // alpha = Z, beta = X, gamma = Y
+            cube.style.transform = `rotateZ(${alpha}deg) rotateX(${beta}deg) rotateY(${gamma}deg)`;
+        }
+
+        // Проверяем, поддерживается ли API в браузере
+        if (!window.DeviceOrientationEvent) {
+            status.textContent = 'Ваше устройство не поддерживает DeviceOrientationEvent.';
+            startButton.classList.add('hidden');
+        }
+    </script>
+</body>
+</html>
